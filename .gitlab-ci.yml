@@ -1,0 +1,50 @@
+stages:
+  - test
+  - build
+  - dockerize
+
+variables:
+  POSTGRES_DB: hr_db
+  POSTGRES_USER: postgres
+  POSTGRES_PASSWORD: password
+  SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/hr_db
+  SPRING_DATASOURCE_USERNAME: postgres
+  SPRING_DATASOURCE_PASSWORD: password
+  GRADLE_OPTS: "-Dorg.gradle.daemon=false"
+  DOCKER_TLS_CERTDIR: "/certs"
+
+test_job:
+  stage: test
+  image: gradle:7.6-jdk17
+  services:
+    - postgres:14-alpine
+  script:
+    - chmod +x gradlew
+    - ./gradlew test
+
+build_job:
+  stage: build
+  image: gradle:7.6-jdk17
+  script:
+    - chmod +x gradlew
+    - ./gradlew build -x test
+  artifacts:
+    paths:
+      - build/libs/*.jar
+    expire_in: 1 day
+
+dockerize_job:
+  stage: dockerize
+  image: docker:27-cli
+  services:
+    - name: docker:27-dind
+      alias: docker
+  needs:
+    - job: build_job
+      artifacts: true
+  script:
+    - DOCKER_USER_LOWER=$(echo "$DOCKER_USERNAME" | tr '[:upper:]' '[:lower:]')
+    - IMAGE_TAG="$DOCKER_USER_LOWER/dev-ops-s09-ex04-push-docker-image-gitlab-ci:1.0.0"
+    - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+    - docker build -t "$IMAGE_TAG" .
+    - docker push "$IMAGE_TAG"
